@@ -107,7 +107,7 @@ curl -sI https://odion.manava.nl
 Bij de eerste keer bezoeken met `WEBUI_AUTH=true`:
 1. Open https://odion.manava.nl
 2. Maak een admin-account aan (eerste registratie wordt automatisch admin)
-3. Log in en configureer modellen via `./scripts/patch-locale.sh https://odion.manava.nl`
+3. Log in — branding/locale zit in de image via `scripts/patch.sh` (rebuild bij wijzigingen)
 
 ## Updates deployen
 
@@ -125,7 +125,7 @@ Dit synct bestanden en herstart de container. De `.env` op de VPS wordt niet ove
 | Container start niet | `docker logs odionchat` | Check .env en docker-compose.yml |
 | HTTPS werkt niet | `systemctl status caddy` | Check DNS A-record en Caddyfile |
 | 502 Bad Gateway | `docker ps` | Container draait niet, `docker compose up -d` |
-| Locale/CSS niet geladen | `docker logs odionchat \| head -20` | Check of entrypoint.sh correct is gemount |
+| Locale/CSS niet geladen | Rebuild image | Branding zit in image via `patch.sh` — `docker compose up -d --build` |
 | API key werkt niet | Chat testen in browser | Controleer `AZURE_OPENAI_API_KEY` en `OPENAI_API_BASE_URLS` in .env |
 
 ## Logs bekijken

@@ -9,12 +9,9 @@ FROM ghcr.io/open-webui/open-webui@sha256:60fa63e738e7dc5e548f26a54d6deac684d671
 WORKDIR /app/backend
 
 COPY config/ /config/
-COPY scripts/patch-odion.sh /app/backend/patch-odion.sh
-COPY scripts/patch-locale.sh /app/backend/patch-locale.sh
+COPY scripts/patch.sh /app/backend/patch.sh
 
-RUN chmod +x /app/backend/patch-odion.sh 
-RUN bash /app/backend/patch-odion.sh 
-RUN chmod +x /app/backend/patch-locale.sh 
-RUN bash /app/backend/patch-locale.sh
+RUN chmod +x /app/backend/patch.sh 
+RUN bash /app/backend/patch.sh 
 
 ENTRYPOINT ["bash", "/app/backend/start.sh"]

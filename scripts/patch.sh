@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# entrypoint.sh — Auto-patch CSS + Dutch locale at container start, then launch Open WebUI
+# patch.sh — Auto-patch CSS + Dutch locale at container start, then launch Open WebUI
 set -euo pipefail
 
-echo "[entrypoint] Copying Odion CSS..."
+echo "[patch] Copying Odion CSS..."
 
 if [ -f /config/custom.css ]; then
   cp /config/custom.css /app/backend/open_webui/static/custom.css 2>/dev/null || true
   cp /config/custom.css /app/build/static/custom.css 2>/dev/null || true
-  echo "[entrypoint] CSS copied to static dirs"
+  echo "[patch] CSS copied to static dirs"
 else
-  echo "[entrypoint] Warning: /config/custom.css not found, skipping CSS"
+  echo "[patch] Warning: /config/custom.css not found, skipping CSS"
 fi
 
 # Cache-buster: bump custom.css link in index.html met md5 van het bestand
@@ -19,16 +19,17 @@ if [ -f /app/build/index.html ] && [ -f /app/build/static/custom.css ]; then
   CSS_HASH=$(md5sum /app/build/static/custom.css | cut -d' ' -f1 | head -c 8)
   # Zet versie achter custom.css (vervang bestaande ?v=... als die er al is)
   sed -i -E "s|href=\"/static/custom.css(\\?v=[a-z0-9]+)?\"|href=\"/static/custom.css?v=${CSS_HASH}\"|g" /app/build/index.html
-  echo "[entrypoint] Cache-buster set: custom.css?v=${CSS_HASH}"
+  echo "[patch] Cache-buster set: custom.css?v=${CSS_HASH}"
 fi
 
-echo "[entrypoint] Copying Odion logos..."
+echo "[patch] Copying Odion logos..."
 if [ -f /config/logo.svg ]; then
   for DIR in /app/backend/open_webui/static /app/build/static; do
     cp /config/logo.svg "$DIR/logo.svg" 2>/dev/null || true
     cp /config/logo.svg "$DIR/logo2.svg" 2>/dev/null || true   # 0.8.7 verwijst naar logo2.svg in sommige UI-componenten
     cp /config/logo.svg "$DIR/favicon.svg" 2>/dev/null || true
   done
+  
   # Echte PNG voor login page (splash.png) en favicon.png — browser kan SVG-bytes
   # in .png extension niet als raster renderen, daarom een echte PNG-render
   if [ -f /config/logo.png ]; then
@@ -47,7 +48,7 @@ if [ -f /config/logo.svg ]; then
   fi
 
   # Strip "(Open WebUI)" branding suffix uit backend env.py (line: WEBUI_NAME += " (Open WebUI)")
-  echo "[entrypoint] Patching '(Open WebUI)' suffix in backend..."
+  echo "[patch] Patching '(Open WebUI)' suffix in backend..."
   sed -i 's|WEBUI_NAME += " (Open WebUI)"|pass  # patched: Odion branding|' /app/backend/open_webui/env.py 2>/dev/null || true
   # Invalidate bytecode cache zodat Python opnieuw inleest
   rm -f /app/backend/open_webui/__pycache__/env.cpython-*.pyc 2>/dev/null || true
@@ -55,7 +56,7 @@ if [ -f /config/logo.svg ]; then
   # Force Dutch locale + cross-browser logo replacement via MutationObserver.
   # Vervangt gradient-avatars met Odion logo én verwijdert crossorigin attribuut
   # (anders blokkeert Chrome de fetch op same-origin static asset).
-  echo "[entrypoint] Injecting locale + logo-MutationObserver in index.html..."
+  echo "[patch] Injecting locale + logo-MutationObserver in index.html..."
   if [ -f /app/build/index.html ] && ! grep -q 'odionLogoObserver\|fixImg' /app/build/index.html; then
     cat > /tmp/inject.html <<'INJECT'
 <script>
@@ -125,16 +126,16 @@ print('inject done')
     cp /config/logo-tekst.svg /app/backend/open_webui/static/logo-tekst.svg 2>/dev/null || true
     cp /config/logo-tekst.svg /app/build/static/logo-tekst.svg 2>/dev/null || true
   fi
-  echo "[entrypoint] Logos copied"
+  echo "[patch] Logos copied"
 fi
 
-echo "[entrypoint] Searching for Dutch locale file..."
+echo "[patch] Searching for Dutch locale file..."
 LOCALE_FILE=$(find /app/build/_app/immutable/chunks -name '*.js' -exec grep -l '"nl-NL"' {} \; 2>/dev/null | head -1)
 
 if [ -z "$LOCALE_FILE" ]; then
-  echo "[entrypoint] Warning: Dutch locale file not found, skipping locale patch"
+  echo "[patch] Warning: Dutch locale file not found, skipping locale patch"
 else
-  echo "[entrypoint] Patching locale file: $LOCALE_FILE"
+  echo "[patch] Patching locale file: $LOCALE_FILE"
 
   # Batch 1: Folders, Chat History, Sidebar, Users, Archive, Files, Notes
   sed -i \
@@ -343,13 +344,13 @@ else
     -e 's/"Language Locales":""/"Language Locales":"Taalinstellingen"/g' \
     "$LOCALE_FILE"
 
-  echo "[entrypoint] Locale patched successfully"
+  echo "[patch] Locale patched successfully"
 fi
 
 # if [ "${ODION_PATCH_ONLY:-}" = "1" ]; then
-#   echo "[entrypoint] Patch-only mode — skipping server start"
+#   echo "[patch] Patch-only mode — skipping server start"
 #   exit 0
 # fi
 
-# echo "[entrypoint] Starting Open WebUI..."
+# echo "[patch] Starting Open WebUI..."
 # exec bash /app/backend/start.sh

@@ -39,7 +39,7 @@ OdionChat gebruikt Azure AI Foundry als LLM-backend via het OpenAI v1-compatible
 | Authenticatie | Email login (`WEBUI_AUTH=true`) | Microsoft Entra ID (SSO) |
 | Hosting | Docker lokaal of VPS + Caddy | Azure Container Apps |
 | Data opslag | SQLite volume | Azure PostgreSQL (optioneel) |
-| Branding | Custom CSS via entrypoint | Custom CSS via entrypoint |
+| Branding | Custom CSS via `patch.sh` (build-time) | Custom CSS via `patch.sh` (build-time) |
 
 ## Dataflow
 

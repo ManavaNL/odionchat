@@ -16,9 +16,24 @@ Handleiding voor het deployen van OdionChat op Azure met:
 
 Zie ook:
 
-- `docs/sso-microsoft.md` — gedetailleerde Entra-configuratie
-- `docs/deployment.md` — VPS-deployment (huidige demo-omgeving)
+- `docs/deployment-old.md` — VPS-deployment (legacy)
 - `docs/architectuur.md` — architectuurkeuzes
+
+## Stap-voor-stap overzicht
+
+| Stap | Wat | Waar in deze handleiding |
+|------|-----|--------------------------|
+| 1 | Variabelen en regio kiezen | [Fase 0](#fase-0--beslissingen-vooraf) |
+| 2 | Entra app registration + client secret | [Fase 1](#fase-1--microsoft-entra-id-sso) |
+| 3 | Alleen toegewezen Odion-gebruikers toestaan | [Fase 1.5](#15-toegang-beperken-tot-ingelogde-gebruikers) |
+| 4 | Azure AI Foundry resource + model deployments | [Fase 2](#fase-2--azure-ai-foundry-endpoint) |
+| 5 | Azure infrastructuur (RG, logs, Container Apps) | [Fase 3](#fase-3--container-app-deployen) |
+| 6 | Container image deployen | [Fase 3.2](#32-container-image-deployen) |
+| 7 | Omgevingsvariabelen (Foundry + Entra + auth) | [Fase 4](#fase-4--omgevingsvariabelen-configureren) |
+| 8 | Custom domain + TLS | [Fase 3.4](#34-custom-domain--tls) |
+| 9 | Testen en go-live | [Fase 6](#fase-6--hardening--go-live) |
+
+**Productie-image:** `ghcr.io/manavanl/odionchat:latest` (poort **8080**).
 
 ## Architectuur
 
@@ -78,9 +93,30 @@ Voer dit uit vóór het aanmaken van Azure-resources.
    - Azure: Contributor op resource group
    - DNS: beheer van `odion.nl`
 
+Stel onderstaande shell-variabelen in voor de rest van deze handleiding (pas waarden aan):
+
+```bash
+export LOCATION=westeurope
+export RESOURCE_GROUP=rg-odionchat-prod
+export CONTAINER_APP=odionchat
+export CONTAINER_ENV=cae-odionchat-prod
+export LOG_ANALYTICS=law-odionchat-prod
+export KEY_VAULT=kv-odionchat-prod
+export CUSTOM_DOMAIN=chat.odion.nl
+export WEBUI_URL=https://chat.odion.nl
+export IMAGE=ghcr.io/manavanl/odionchat:latest
+```
+
+Installeer de Azure CLI en log in:
+
+```bash
+az login
+az account set --subscription "<subscription-id-of-name>"
+```
+
 ---
 
-## Fase 1 — Microsoft Entra ID
+## Fase 1 — Microsoft Entra ID (SSO)
 
 Entra moet als eerste worden ingericht, omdat de redirect URI exact moet matchen met het productiedomein.
 
@@ -124,10 +160,44 @@ Ga naar **API permissions** en controleer:
 
 Klik **Grant admin consent** als dat nog niet gedaan is.
 
-### 1.5 Optioneel: toegang beperken
+### 1.5 Toegang beperken tot ingelogde gebruikers
 
-- **Enterprise applications** → OdionChat → **Properties** → **User assignment required:** Yes
-- Wijs een security group toe (bijv. `OdionChat-Users`)
+OdionChat heeft **twee lagen** nodig: Entra bepaalt *wie* mag inloggen; Open WebUI dwingt af dat *alle* gebruikers ingelogd zijn.
+
+#### Entra (wie mag de app openen)
+
+1. Ga naar **Microsoft Entra ID** → **Enterprise applications** → **OdionChat**
+2. **Properties** → zet **User assignment required?** op **Yes**
+3. **Users and groups** → **Add user/group** → wijs een security group toe (bijv. `OdionChat-Users`)
+
+Gebruikers die niet aan de app zijn toegewezen, zien na "Sign in with Microsoft" een Entra-foutmelding — ze komen de app niet in.
+
+#### Open WebUI (login altijd verplicht)
+
+Deze variabelen staan in [Fase 4](#fase-4--omgevingsvariabelen-configureren) en worden op de Container App gezet:
+
+| Variabele | Waarde | Effect |
+|-----------|--------|--------|
+| `WEBUI_AUTH` | `true` | Geen anonieme toegang |
+| `ENABLE_SIGNUP` | `false` | Geen e-mail/wachtwoord-registratie |
+| `ENABLE_OAUTH_SIGNUP` | `true` | Entra-gebruikers krijgen bij eerste login automatisch een account |
+| `ENABLE_LOGIN_FORM` | `false` | Alleen "Sign in with Microsoft", geen wachtwoordformulier |
+| `WEBUI_URL` | `https://chat.odion.nl` | Correcte OAuth redirect URI's |
+
+`ENABLE_OAUTH_SIGNUP=true` betekent **niet** dat iedereen zichzelf kan aanmelden — alleen gebruikers die Entra al heeft goedgekeurd (stap 1–3 hierboven) kunnen via SSO binnenkomen.
+
+### 1.6 Client secret veilig opslaan
+
+Bewaar het client secret direct in Key Vault (kan ook na Fase 3):
+
+```bash
+az keyvault secret set \
+  --vault-name "$KEY_VAULT" \
+  --name MICROSOFT-CLIENT-SECRET \
+  --value "<client-secret-value>"
+```
+
+Noteer ook Client ID en Tenant ID — die zijn geen secrets en kunnen als gewone env vars op de Container App.
 
 ### Checkpoint Fase 1
 
@@ -138,18 +208,31 @@ Klik **Grant admin consent** als dat nog niet gedaan is.
 
 ---
 
-## Fase 2 — Azure AI Foundry
+## Fase 2 — Azure AI Foundry endpoint
 
-OdionChat praat via het OpenAI-compatible endpoint in `docker-compose.yml` (`OPENAI_API_BASE_URLS` + `AZURE_OPENAI_API_KEY`).
+OdionChat praat via het OpenAI-compatible v1-endpoint van Azure AI Foundry. In Open WebUI heet dat `OPENAI_API_BASE_URLS` + `OPENAI_API_KEYS` (zie `.env.example`).
 
 ### 2.1 Foundry-resource aanmaken
 
-1. Azure Portal → **Azure AI Foundry** (of maak een **Azure OpenAI**-resource aan binnen Foundry)
-2. Maak een project + resource aan in de gekozen regio (bijv. `westeurope`)
-3. Noteer de resourcenaam — het endpoint wordt:
+**Via Azure Portal:**
+
+1. Ga naar [Azure AI Foundry](https://ai.azure.com) of Azure Portal → **Create a resource** → **Azure OpenAI**
+2. Maak een resource aan in dezelfde regio als de Container App (bijv. `westeurope`)
+3. Open de resource → **Keys and Endpoint** → noteer:
+   - **Endpoint** (basis-URL)
+   - **Key 1**
+
+Het endpoint voor OdionChat moet eindigen op `/openai/v1/`:
 
 ```
 https://<resource-name>.openai.azure.com/openai/v1/
+```
+
+Voorbeeld met resourcenaam `aoai-odionchat-prod`:
+
+```bash
+export FOUNDRY_ENDPOINT="https://aoai-odionchat-prod.openai.azure.com/openai/v1/"
+export FOUNDRY_API_KEY="<key-1-from-portal>"
 ```
 
 ### 2.2 Model deployments aanmaken
@@ -163,17 +246,24 @@ In het Foundry-portaal → **Deployments**, maak deployments aan:
 
 De **deployment name** is wat Open WebUI als model-ID gebruikt (niet de onderliggende modelnaam).
 
-### 2.3 API key ophalen
+### 2.3 API key ophalen en opslaan
 
 1. Foundry / Azure OpenAI resource → **Keys and Endpoint**
 2. Kopieer **Key 1** (of Key 2)
-3. Bewaar in Key Vault (Fase 4)
+3. Bewaar in Key Vault:
+
+```bash
+az keyvault secret set \
+  --vault-name "$KEY_VAULT" \
+  --name OPENAI-API-KEY \
+  --value "$FOUNDRY_API_KEY"
+```
 
 ### 2.4 Test de verbinding
 
 ```bash
-curl "https://<resource-name>.openai.azure.com/openai/v1/chat/completions" \
-  -H "api-key: $AZURE_OPENAI_API_KEY" \
+curl "$FOUNDRY_ENDPOINT/chat/completions" \
+  -H "api-key: $FOUNDRY_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "odionchat-fast",
@@ -194,33 +284,117 @@ Container Apps maakt outbound HTTPS-verbindingen naar het publieke Foundry-endpo
 
 ---
 
-## Fase 3 — Container hosting + domein
+## Fase 3 — Container App deployen
 
-### 3.1 Basisinfrastructuur aanmaken
+### 3.1 Resource group + basisinfrastructuur
 
-Maak in resource group `rg-odionchat-prod` aan:
+```bash
+# Resource group
+az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
 
-1. **Log Analytics workspace** (`law-odionchat-prod`)
-2. **Container Apps Environment** (`cae-odionchat-prod`) — standaard zonder VNet
-3. **Key Vault** (`kv-odionchat-prod`)
-4. **Azure Container Registry** (`acrodionchat`) — aanbevolen voor productie
+# Log Analytics (voor Container Apps logs)
+az monitor log-analytics workspace create \
+  --resource-group "$RESOURCE_GROUP" \
+  --workspace-name "$LOG_ANALYTICS"
 
-### 3.2 Container image bouwen en deployen
+LOG_ANALYTICS_ID=$(az monitor log-analytics workspace show \
+  --resource-group "$RESOURCE_GROUP" \
+  --workspace-name "$LOG_ANALYTICS" \
+  --query customerId -o tsv)
 
-OdionChat draait op de upstream Open WebUI-image met aangepaste config via `entrypoint.sh`. Bouw een custom image op basis van de gepinde image uit `docker-compose.yml`:
+LOG_ANALYTICS_KEY=$(az monitor log-analytics workspace get-shared-keys \
+  --resource-group "$RESOURCE_GROUP" \
+  --workspace-name "$LOG_ANALYTICS" \
+  --query primarySharedKey -o tsv)
 
-```dockerfile
-FROM ghcr.io/open-webui/open-webui@sha256:60fa63e738e7dc5e548f26a54d6deac684d6712256a7fae91dd6157ce64bef84
-COPY config/ /config/
-COPY scripts/entrypoint.sh /entrypoint.sh
-ENTRYPOINT ["bash", "/entrypoint.sh"]
+# Container Apps Environment (publiek, geen VNet)
+az containerapp env create \
+  --name "$CONTAINER_ENV" \
+  --resource-group "$RESOURCE_GROUP" \
+  --location "$LOCATION" \
+  --logs-workspace-id "$LOG_ANALYTICS_ID" \
+  --logs-workspace-key "$LOG_ANALYTICS_KEY"
+
+# Key Vault voor secrets
+az keyvault create \
+  --name "$KEY_VAULT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --location "$LOCATION" \
+  --enable-rbac-authorization true
 ```
 
-Push naar Azure Container Registry en deploy als Container App.
+> **Optioneel:** eigen Azure Container Registry (`acrodionchat`) als je niet de GHCR-image wilt gebruiken. CI publiceert naar `ghcr.io/manavanl/odionchat:latest` — dat is de aanbevolen productie-image.
 
-### 3.3 Container App configureren
+### 3.2 Container image deployen
 
-Maak Container App `odionchat` aan met:
+OdionChat is een custom Open WebUI-image met Odion-branding (gebakken tijdens `docker build`, zie `Dockerfile`).
+
+**Optie A — GHCR-image (aanbevolen):**
+
+De image wordt automatisch gebouwd bij push naar `main` (`.github/workflows/docker-publish.yml`).
+
+```bash
+export IMAGE=ghcr.io/manavanl/odionchat:latest
+```
+
+**Optie B — zelf bouwen en pushen:**
+
+```bash
+docker build -t ghcr.io/manavanl/odionchat:local .
+docker push ghcr.io/manavanl/odionchat:local
+export IMAGE=ghcr.io/manavanl/odionchat:local
+```
+
+### 3.3 Container App aanmaken
+
+Maak eerst een willekeurig `WEBUI_SECRET_KEY` (64+ tekens) en sla op in Key Vault:
+
+```bash
+export WEBUI_SECRET_KEY=$(openssl rand -hex 32)
+
+az keyvault secret set \
+  --vault-name "$KEY_VAULT" \
+  --name WEBUI-SECRET-KEY \
+  --value "$WEBUI_SECRET_KEY"
+```
+
+Maak de Container App aan (env vars worden in Fase 4 uitgebreid):
+
+```bash
+az containerapp create \
+  --name "$CONTAINER_APP" \
+  --resource-group "$RESOURCE_GROUP" \
+  --environment "$CONTAINER_ENV" \
+  --image "$IMAGE" \
+  --target-port 8080 \
+  --ingress external \
+  --min-replicas 1 \
+  --max-replicas 2 \
+  --cpu 1.0 \
+  --memory 2.0Gi \
+  --env-vars \
+    PORT=8080 \
+    WEBUI_NAME=OdionChat \
+    WEBUI_AUTH=true \
+    ENABLE_SIGNUP=false
+```
+
+Noteer de FQDN:
+
+```bash
+az containerapp show \
+  --name "$CONTAINER_APP" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query properties.configuration.ingress.fqdn -o tsv
+```
+
+Test de health check (vervang `<fqdn>`):
+
+```bash
+curl -sf "https://<fqdn>/health"
+```
+
+**Portal-alternatief:** Azure Portal → **Container Apps** → **Create** → kies de environment, image `ghcr.io/manavanl/odionchat:latest`, ingress **Accepting traffic from anywhere**, target port **8080**, min replicas **1**.
 
 | Setting | Waarde |
 |---------|--------|
@@ -232,7 +406,9 @@ Maak Container App `odionchat` aan met:
 
 ### 3.4 Custom domain + TLS
 
-1. Container App → **Custom domains** → voeg `chat.odion.nl` toe
+**Via Azure Portal:**
+
+1. Container App → **Custom domains** → **Add** → voeg `chat.odion.nl` toe
 2. Azure toont een **validatie-CNAME** — voeg die toe in DNS voor `odion.nl`
 3. Schakel **managed certificate** in (gratis, auto-renewal)
 4. Voeg productie-CNAME toe:
@@ -240,6 +416,31 @@ Maak Container App `odionchat` aan met:
 ```
 chat.odion.nl  →  CNAME  →  <container-app-fqdn>
 ```
+
+**Via Azure CLI:**
+
+```bash
+az containerapp hostname add \
+  --hostname "$CUSTOM_DOMAIN" \
+  --name "$CONTAINER_APP" \
+  --resource-group "$RESOURCE_GROUP"
+
+# Managed certificate (Portal: Custom domains → Bind certificate → Managed)
+az containerapp hostname bind \
+  --hostname "$CUSTOM_DOMAIN" \
+  --name "$CONTAINER_APP" \
+  --resource-group "$RESOURCE_GROUP" \
+  --environment "$CONTAINER_ENV" \
+  --validation-method CNAME
+```
+
+Wacht tot DNS is gepropageerd en het managed certificate actief is. Test daarna:
+
+```bash
+curl -sf "https://$CUSTOM_DOMAIN/health"
+```
+
+> **Belangrijk:** pas pas na het activeren van het custom domain de Entra redirect URI en `WEBUI_URL` / `MICROSOFT_REDIRECT_URI` aan (Fase 4). Tijdens eerste tests kun je tijdelijk de Container App FQDN gebruiken, maar productie vereist exact `https://chat.odion.nl/oauth/microsoft/callback`.
 
 ### Checkpoint Fase 3
 
@@ -251,20 +452,97 @@ chat.odion.nl  →  CNAME  →  <container-app-fqdn>
 
 ## Fase 4 — Omgevingsvariabelen configureren
 
-Configureer secrets in Key Vault en koppel ze als environment variables aan de Container App.
+Configureer alle instellingen als environment variables op de Container App. Gebruik **Container App secrets** voor gevoelige waarden (client secret, API key, `WEBUI_SECRET_KEY`).
 
-### 4.1 Authenticatie (algemeen)
+### 4.1 Secrets registreren op de Container App
+
+Vervang de placeholders door de waarden uit Fase 1 en 2:
+
+```bash
+export MICROSOFT_CLIENT_ID="<application-client-id>"
+export MICROSOFT_CLIENT_TENANT_ID="<directory-tenant-id>"
+
+az containerapp secret set \
+  --name "$CONTAINER_APP" \
+  --resource-group "$RESOURCE_GROUP" \
+  --secrets \
+    microsoft-client-secret="<client-secret-value>" \
+    openai-api-key="$FOUNDRY_API_KEY" \
+    webui-secret-key="$WEBUI_SECRET_KEY"
+```
+
+### 4.2 Alle variabelen in één keer zetten
+
+```bash
+az containerapp update \
+  --name "$CONTAINER_APP" \
+  --resource-group "$RESOURCE_GROUP" \
+  --set-env-vars \
+    PORT=8080 \
+    WEBUI_NAME=OdionChat \
+    WEBUI_URL="$WEBUI_URL" \
+    WEBUI_AUTH=true \
+    ENABLE_SIGNUP=false \
+    ENABLE_OAUTH_SIGNUP=true \
+    ENABLE_LOGIN_FORM=false \
+    ENABLE_OAUTH_PERSISTENT_CONFIG=false \
+    WEBUI_SESSION_COOKIE_SAME_SITE=lax \
+    WEBUI_SESSION_COOKIE_SECURE=true \
+    MICROSOFT_CLIENT_ID="$MICROSOFT_CLIENT_ID" \
+    MICROSOFT_CLIENT_TENANT_ID="$MICROSOFT_CLIENT_TENANT_ID" \
+    MICROSOFT_CLIENT_SECRET=secretref:microsoft-client-secret \
+    MICROSOFT_OAUTH_SCOPE="openid email profile offline_access" \
+    MICROSOFT_REDIRECT_URI="$WEBUI_URL/oauth/microsoft/callback" \
+    OPENID_PROVIDER_URL="https://login.microsoftonline.com/$MICROSOFT_CLIENT_TENANT_ID/v2.0/.well-known/openid-configuration" \
+    OPENAI_API_BASE_URLS="$FOUNDRY_ENDPOINT" \
+    OPENAI_API_KEYS=secretref:openai-api-key \
+    WEBUI_SECRET_KEY=secretref:webui-secret-key \
+    AZURE_DEPLOYMENT_FAST=odionchat-fast \
+    AZURE_DEPLOYMENT_PRO=odionchat-pro \
+    ENABLE_OPENAI_API=true \
+    ENABLE_CODE_INTERPRETER=false \
+    ENABLE_IMAGE_GENERATION=false \
+    ENABLE_RAG_WEB_SEARCH=false \
+    ENABLE_RAG_LOCAL_WEB_FETCH=false \
+    ENABLE_RAG_HYBRID_SEARCH=false \
+    ENABLE_COMMUNITY_SHARING=false \
+    ENABLE_MESSAGE_RATING=false \
+    ENABLE_EVALUATION_ARENA_MODELS=false \
+    ENABLE_CHANNELS=false \
+    ENABLE_API_KEY=false \
+    ENABLE_DIRECT_CONNECTIONS=false \
+    ENABLE_FORWARD_USER_INFO_HEADERS=false \
+    ENABLE_ADMIN_CHAT_ACCESS=false \
+    ENABLE_OLLAMA_API=false \
+    ENABLE_VERSION_UPDATE_CHECK=false
+```
+
+**Portal-alternatief:** Container App → **Containers** → **Edit and deploy** → tab **Environment variables**. Voeg secrets toe onder **Secrets**, koppel ze met `secretref:<naam>`.
+
+### 4.3 Wat elke groep doet
+
+#### Authenticatie (alleen ingelogde gebruikers)
 
 ```env
 WEBUI_AUTH=true
 ENABLE_SIGNUP=false
+ENABLE_OAUTH_SIGNUP=true
+ENABLE_LOGIN_FORM=false
+WEBUI_URL=https://chat.odion.nl
 WEBUI_SECRET_KEY=<random-64-karakter-secret>
 WEBUI_SESSION_COOKIE_SAME_SITE=lax
 WEBUI_SESSION_COOKIE_SECURE=true
 WEBUI_NAME=OdionChat
+ENABLE_OAUTH_PERSISTENT_CONFIG=false
 ```
 
-### 4.2 Microsoft Entra ID SSO
+- `WEBUI_AUTH=true` — niemand gebruikt de app zonder login
+- `ENABLE_SIGNUP=false` — geen open registratie met e-mail/wachtwoord
+- `ENABLE_OAUTH_SIGNUP=true` — Entra-gebruikers krijgen bij eerste SSO-login een account (combineer met Entra user assignment)
+- `ENABLE_LOGIN_FORM=false` — verberg het wachtwoordformulier; alleen Microsoft-knop
+- `ENABLE_OAUTH_PERSISTENT_CONFIG=false` — lees OAuth-instellingen altijd uit env vars (belangrijk bij Container Apps)
+
+#### Microsoft Entra ID SSO
 
 ```env
 MICROSOFT_CLIENT_ID=<application-client-id>
@@ -275,76 +553,55 @@ MICROSOFT_REDIRECT_URI=https://chat.odion.nl/oauth/microsoft/callback
 OPENID_PROVIDER_URL=https://login.microsoftonline.com/<directory-tenant-id>/v2.0/.well-known/openid-configuration
 ```
 
-### 4.3 Azure AI Foundry (LLM backend)
+De redirect URI moet **exact** overeenkomen met Entra (Fase 1.1) en met `WEBUI_URL`.
+
+#### Azure AI Foundry (LLM backend)
 
 ```env
 OPENAI_API_BASE_URLS=https://<resource-name>.openai.azure.com/openai/v1/
-AZURE_OPENAI_API_KEY=<foundry-api-key>
+OPENAI_API_KEYS=<foundry-api-key>
+AZURE_DEPLOYMENT_FAST=odionchat-fast
+AZURE_DEPLOYMENT_PRO=odionchat-pro
 ```
 
-`docker-compose.yml` mapt `AZURE_OPENAI_API_KEY` naar `OPENAI_API_KEYS` in de container.
+De deployment names (`AZURE_DEPLOYMENT_*`) moeten overeenkomen met de namen in Foundry (Fase 2.2).
 
-### 4.4 OAuth signup inschakelen
+#### Feature lockdown
 
-In productie moet `ENABLE_OAUTH_SIGNUP=true` staan zodat Entra-gebruikers automatisch een account krijgen. De huidige `docker-compose.yml` heeft dit op `false`; pas dit aan voor Azure.
+Deze instellingen staan ook in `.env.example` en moeten op Azure actief blijven — zie het volledige `--set-env-vars` blok in [4.2](#42-alle-variabelen-in-én-keer-zetten).
 
-```env
-ENABLE_OAUTH_SIGNUP=true
-```
+### 4.4 Secrets veilig injecteren (Key Vault)
 
-`ENABLE_SIGNUP=false` blokkeert alleen e-mail/wachtwoord-registratie — dat is gewenst.
-
-### 4.5 Feature lockdown (behouden uit docker-compose.yml)
-
-Deze instellingen staan al in `docker-compose.yml` en moeten ook op Azure actief blijven:
-
-```env
-ENABLE_CODE_INTERPRETER=false
-ENABLE_IMAGE_GENERATION=false
-ENABLE_RAG_WEB_SEARCH=false
-ENABLE_RAG_LOCAL_WEB_FETCH=false
-ENABLE_RAG_HYBRID_SEARCH=false
-ENABLE_COMMUNITY_SHARING=false
-ENABLE_MESSAGE_RATING=false
-ENABLE_EVALUATION_ARENA_MODELS=false
-ENABLE_CHANNELS=false
-ENABLE_API_KEY=false
-ENABLE_DIRECT_CONNECTIONS=false
-ENABLE_FORWARD_USER_INFO_HEADERS=false
-ENABLE_ADMIN_CHAT_ACCESS=false
-ENABLE_OLLAMA_API=false
-ENABLE_VERSION_UPDATE_CHECK=false
-```
-
-### 4.6 Secrets veilig injecteren
-
-Bewaar in Key Vault:
+Voor langere termijn en secret rotation, bewaar in Key Vault:
 
 | Secret | Gebruik |
 |--------|---------|
 | `MICROSOFT-CLIENT-SECRET` | Entra SSO |
 | `OPENAI-API-KEY` | Azure AI Foundry |
-| `WEBUI-SECRET-KEY` | JWT signing |
+| `WEBUI-SECRET-KEY` | JWT signing / sessies |
 | `DATABASE-URL` | PostgreSQL (optioneel) |
 
-Koppel Key Vault-secrets als environment variables in de Container App.
+Key Vault-referenties op Container Apps vereisen een managed identity + RBAC (`Key Vault Secrets User`). Alternatief: gebruik Container App secrets direct (zoals in 4.1) — eenvoudiger voor de eerste deploy.
 
-### 4.7 Container App bijwerken
-
-Na wijzigingen aan env vars of image:
+### 4.5 Container App herstarten na wijzigingen
 
 ```bash
-az containerapp update --name odionchat --resource-group rg-odionchat-prod
+az containerapp update \
+  --name "$CONTAINER_APP" \
+  --resource-group "$RESOURCE_GROUP"
 ```
+
+Of in Portal: **Revision management** → nieuwe revision wordt automatisch aangemaakt bij env-wijzigingen.
 
 ### Checkpoint Fase 4
 
-- [ ] Alle env vars geconfigureerd
-- [ ] `ENABLE_OAUTH_SIGNUP=true`
-- [ ] Incognito: "Sign in with Microsoft" zichtbaar
+- [ ] Alle env vars geconfigureerd (Foundry + Entra + auth lockdown)
+- [ ] `WEBUI_AUTH=true`, `ENABLE_SIGNUP=false`, `ENABLE_OAUTH_SIGNUP=true`
+- [ ] `ENABLE_LOGIN_FORM=false` (alleen Microsoft-login)
+- [ ] Entra user assignment required + security group toegewezen
+- [ ] Incognito: "Sign in with Microsoft" zichtbaar, geen signup-formulier
 - [ ] Login met Odion-account werkt
-- [ ] Chat met Azure-modellen werkt
-- [ ] Modellen en suggesties geconfigureerd via patch-locale.sh
+- [ ] Chat met Azure-modellen werkt (OdionChat Snel / Nadenken)
 
 ---
 
@@ -419,14 +676,16 @@ Als er bestaande chats/users zijn om te behouden:
 
 | Item | Actie |
 |------|-------|
-| Signup | `ENABLE_SIGNUP=false`, `ENABLE_OAUTH_SIGNUP=true` |
+| Signup | `ENABLE_SIGNUP=false`, `ENABLE_OAUTH_SIGNUP=true`, `ENABLE_LOGIN_FORM=false` |
+| Entra toegang | User assignment required + security group |
 | Cookies | `WEBUI_SESSION_COOKIE_SECURE=true` |
+| Publieke URL | `WEBUI_URL=https://chat.odion.nl` |
 | Admin | Eerste Entra-gebruiker promoveren via Admin Panel, of bootstrap via `WEBUI_ADMIN_EMAIL` |
 | Secret rotation | Key Vault + kalenderherinnering Entra secret expiry |
 | Monitoring | Container Apps logs → Log Analytics; alert op health check failures |
 | Backup | Postgres automated backups + periodieke export van uploads |
 | Privacy/DPIA | Documenteer dat chatcontent naar Azure AI Foundry gaat |
-| Branding | `entrypoint.sh` patcht CSS/locale automatisch bij boot |
+| Branding | Odion CSS/locale zit in de Docker image (`Dockerfile` + `patch.sh`) |
 | Updates | Volg update-ritueel in `docs/openwebui-reference.md` vóór image upgrade |
 
 ### Testplan
@@ -439,21 +698,8 @@ Als er bestaande chats/users zijn om te behouden:
 6. Start een chat met "OdionChat Nadenken"
 7. Controleer Odion branding (logo, paars, Nederlandse UI)
 8. Herstart container → sessie/data intact
-9. Test met niet-toegewezen account (indien user assignment required)
-
----
-
-## Uitvoeringsvolgorde (voor Rick/IT)
-
-| Stap | Wie | Geschatte tijd |
-|------|-----|----------------|
-| 1. Entra app registration + redirect URI | IT / Rick | ~1 uur |
-| 2. Foundry resource + deployments + API key | IT / Rick | ~2 uur |
-| 3. Azure infra (RG, Key Vault, Container Apps, DNS) | IT / DevOps | ~halve dag |
-| 4. Container deployen + env vars | Dev | ~2 uur |
-| 5. SSO + chat testen | Dev + pilotgebruiker | ~1 uur |
-| 6. (Optioneel) PostgreSQL + migratie | Dev + IT | ~halve dag |
-| 7. patch-locale.sh + UAT | Dev | ~1 uur |
+9. Test met niet-toegewezen account → Entra weigert toegang
+10. Test anoniem browsen → redirect naar login, geen chat zonder SSO
 
 ---
 
@@ -461,10 +707,9 @@ Als er bestaande chats/users zijn om te behouden:
 
 Bij de overstap van plan naar implementatie zijn waarschijnlijk deze aanpassingen nodig:
 
-1. **`docker-compose.yml`** — `ENABLE_OAUTH_SIGNUP=true`; `WEBUI_SESSION_COOKIE_SECURE=true` voor prod
-2. **`scripts/patch-locale.sh`** — modelnamen wijzigen naar Azure deployment names
-3. **`.env.example`** — Entra + Azure OpenAI + optionele `DATABASE_URL` documenteren
-4. **Optioneel:** Bicep/Terraform voor Container Apps deploy pipeline
+1. **`.env.example`** — Entra-variabelen + `WEBUI_URL` documenteren voor productie
+2. **`scripts/patch.sh`** — eventueel modelnamen/suggesties uitbreiden (WIP)
+3. **Optioneel:** Bicep/Terraform voor Container Apps deploy pipeline
 
 ---
 
@@ -474,10 +719,12 @@ Bij de overstap van plan naar implementatie zijn waarschijnlijk deze aanpassinge
 |----------|----------|-----------|
 | SSO-knop niet zichtbaar | Container logs | Controleer `MICROSOFT_*` env vars |
 | Redirect URI mismatch | Entra app registration | URI moet exact `https://chat.odion.nl/oauth/microsoft/callback` zijn |
-| 401 bij chat | Foundry logs / curl test | Controleer API key en deployment name |
+| 401 bij chat | Foundry logs / curl test | Controleer `OPENAI_API_KEYS` en `OPENAI_API_BASE_URLS` |
 | Gebruiker kan niet inloggen via SSO | `ENABLE_OAUTH_SIGNUP` | Zet op `true` |
+| Wachtwoordformulier nog zichtbaar | `ENABLE_LOGIN_FORM` | Zet op `false` |
+| OAuth-instellingen lijken oud | `ENABLE_OAUTH_PERSISTENT_CONFIG` | Zet op `false` of wis DB |
 | Geen email na SSO | Entra token config | Voeg email optional claim toe (Fase 1.3) |
-| Branding/locale werkt niet | Container logs bij boot | Check of `entrypoint.sh` draait |
+| Branding/locale werkt niet | Image rebuild | Branding zit in image — rebuild en redeploy |
 | Data verdwenen na restart | Storage config | Controleer volume mount of `DATABASE_URL` |
 | 502 / timeout | Container App metrics | Verhoog memory; check health probe op port 8080 |
 | Eerste boot duurt lang | Container logs | Embeddings download (3–5 min) is normaal |

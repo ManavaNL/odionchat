@@ -6,7 +6,7 @@ on:
     paths:
       - azure/**
       - config/**
-      - scripts/entrypoint.sh
+      - scripts/patch.sh
       - .github/workflows/docker-publish.yml
   workflow_dispatch:
 

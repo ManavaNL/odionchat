@@ -91,12 +91,11 @@ odionchat/
     logo.png / logo.svg     # Logo's voor UI en favicon
     system-prompt.txt       # System prompt (Kompas, B1, weigert persoonsgegevens)
   scripts/
-    patch-locale.sh         # CSS, logo's + NL locale (baked in tijdens docker build)
-    patch-odion.sh          # Model/suggestie-config (build-time, WIP)
+    patch.sh                # CSS, logo's + NL locale (baked in tijdens docker build)
   data/                     # SQLite, uploads (gitignored)
 ```
 
-Branding en Nederlandse UI worden tijdens `docker build` in de image gebakken via `patch-locale.sh`. De container start daarna met de standaard Open WebUI entrypoint.
+Branding en Nederlandse UI worden tijdens `docker build` in de image gebakken via `scripts/patch.sh`. De container start daarna met de standaard Open WebUI entrypoint (`start.sh`).
 
 ## Authenticatie
 
