@@ -9,12 +9,12 @@
 
 # set -euo pipefail
 
-BASE_URL="${1:-http://localhost:3000}"
-CONTAINER="odionchat"
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# BASE_URL="${1:-http://localhost:3000}"
+# CONTAINER="odionchat"
+# PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-ADMIN_EMAIL="${WEBUI_ADMIN_EMAIL:-admin@odion.local}"
-ADMIN_PASSWORD="${WEBUI_ADMIN_PASSWORD:-changeme}"
+# ADMIN_EMAIL="${WEBUI_ADMIN_EMAIL:-admin@odion.local}"
+# ADMIN_PASSWORD="${WEBUI_ADMIN_PASSWORD:-changeme}"
 
 # Wait for API to be ready
 # echo "=== Waiting for API to be ready ==="
@@ -54,8 +54,8 @@ ADMIN_PASSWORD="${WEBUI_ADMIN_PASSWORD:-changeme}"
 # echo "=== Creating + updating models ==="
 
 # SYSTEM_PROMPT=$(python3 -c "import json; print(json.dumps(open('${PROJECT_DIR}/config/system-prompt.txt').read()))")
-# SUGGESTIONS='[{"title":["Dagrapportage","schrijven"],"content":"Help me een dagrapportage schrijven over mijn dienst van vandaag."},{"title":["Eigen regie","ondersteunen"],"content":"Hoe kan ik de eigen regie van mijn cliënt beter ondersteunen?"},{"title":["Uitnodiging","familieavond"],"content":"Schrijf een uitnodiging voor een familieavond bij onze woonlocatie."}]'
+# DEFAULT_PROMPT_SUGGESTIONS='[{"title":["Dagrapportage","schrijven"],"content":"Help me een dagrapportage schrijven over mijn dienst van vandaag."},{"title":["Eigen regie","ondersteunen"],"content":"Hoe kan ik de eigen regie van mijn cliënt beter ondersteunen?"},{"title":["Uitnodiging","familieavond"],"content":"Schrijf een uitnodiging voor een familieavond bij onze woonlocatie."}]'
 
 # Logo als data-URL voor model profile_image_url — anders laat Open WebUI's API-fallback
 # een gradient avatar zien met inconsistente content-type headers (broken icon in browser)
-LOGO_DATA_URL="data:image/png;base64,$(base64 -i "${PROJECT_DIR}/config/logo.png" | tr -d '\n')"
+# LOGO_DATA_URL="data:image/png;base64,$(base64 -i "${PROJECT_DIR}/config/logo.png" | tr -d '\n')"

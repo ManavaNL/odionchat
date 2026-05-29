@@ -28,7 +28,7 @@ cp .env.example .env
 2. Build en start OdionChat:
 
 ```bash
-docker compose up -d --build
+docker compose up --build
 ```
 
 3. Open je browser op [http://localhost:3000](http://localhost:3000)
