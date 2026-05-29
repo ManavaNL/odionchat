@@ -1,10 +1,10 @@
 ---
-date: 2026-05-01
+date: 2026-05-29
 tags:
   - odion
   - odionchat
   - architectuur
-description: "Architectuurbeslissingen voor de OdionChat demo: waarom Open WebUI, Google Gemini API, en Docker als stack."
+description: "Architectuurbeslissingen voor OdionChat: Open WebUI, Azure AI Foundry, en Docker als stack."
 ---
 
 # OdionChat — Architectuur
@@ -15,32 +15,31 @@ Open WebUI is een open-source chatinterface die meerdere LLM-backends ondersteun
 
 **Voordelen voor Odion:**
 
-- **OpenAI-compatible backends** — Gemini, Azure OpenAI, Anthropic, lokale modellen — allemaal pluggable
+- **OpenAI-compatible backends** — Azure AI Foundry, Anthropic, lokale modellen — allemaal pluggable
 - **System prompt afdwingbaar** — per model via admin panel, gebruikers kunnen dit niet wijzigen
 - **Temporary Chat mode** — stateless optie, niets opgeslagen (privacygarantie)
 - **SSO-ready** — Microsoft Entra ID (Azure AD) ondersteund via OIDC, past bij Odion's M365
 - **Open source** — geen vendor lock-in, past bij exit-strategie
 - **Single container** — eenvoudig te draaien en te verplaatsen
 
-## Waarom Google Gemini (i.p.v. Azure OpenAI)?
+## Waarom Azure AI Foundry?
 
-Azure OpenAI is de beoogde productie-omgeving, maar is nog niet ingericht (Rick/IT, Citrix-migratie). Gemini 2.5 Flash/Pro via Google AI Studio dient als tijdelijke backend voor de demo:
+OdionChat gebruikt Azure AI Foundry als LLM-backend via het OpenAI v1-compatible endpoint:
 
-- Gratis tier ruim genoeg voor demo-volume
-- Bereikbaar via OpenAI-compatible endpoint (`generativelanguage.googleapis.com/v1beta/openai`) — geen aparte SDK
-- Twee preset-modellen: Flash (snel, goedkoop) en Pro (nadenken, complexere casuistiek)
+- Past binnen Odion's Azure-omgeving (data residency, billing, governance)
+- Bereikbaar via OpenAI-compatible endpoint (`https://<resource>.openai.azure.com/openai/v1/`) — geen aparte SDK
+- Twee deployments: `odionchat-fast` (snel, dagelijks gebruik) en `odionchat-pro` (complexere casuistiek)
+- Zelfde integratie lokaal, op VPS en op Azure Container Apps — alleen env vars wijzigen
 
-De architectuur verandert niet: Open WebUI praat met een LLM API. Bij switch naar Azure OpenAI wijzigen we alleen `OPENAI_API_BASE_URLS` en `OPENAI_API_KEYS`.
+## Lokaal vs. productie
 
-## Demo vs. productie
-
-| Aspect | Demo (nu) | Productie (later) |
-|--------|-----------|-------------------|
-| LLM backend | Gemini 2.5 Flash/Pro | Azure OpenAI (GPT-4.1/5) |
+| Aspect | Lokaal / demo | Productie (Azure) |
+|--------|---------------|-------------------|
+| LLM backend | Azure AI Foundry | Azure AI Foundry |
 | Authenticatie | Email login (`WEBUI_AUTH=true`) | Microsoft Entra ID (SSO) |
-| Hosting | VPS (Vultr) + Caddy | Odion-Azure |
-| Data opslag | SQLite volume | Managed database |
-| Branding | Custom CSS via entrypoint | Geïntegreerd thema |
+| Hosting | Docker lokaal of VPS + Caddy | Azure Container Apps |
+| Data opslag | SQLite volume | Azure PostgreSQL (optioneel) |
+| Branding | Custom CSS via entrypoint | Custom CSS via entrypoint |
 
 ## Dataflow
 
@@ -48,16 +47,16 @@ De architectuur verandert niet: Open WebUI praat met een LLM API. Bij switch naa
 Gebruiker (browser)
   |
   v
-Caddy (odion.manava.nl, Let's Encrypt TLS)
+HTTPS (chat.odion.nl of localhost:3000)
   |
   v
-Open WebUI (container, localhost:3000 op VPS)
+Open WebUI (container)
   |
   v
-Google Gemini API (generativelanguage.googleapis.com)
+Azure AI Foundry (OpenAI v1-compatible endpoint, HTTPS)
   |
   v
 Antwoord terug naar gebruiker
 ```
 
-Geen data verlaat de sessie naar derden buiten Google. Bij Temporary Chat wordt lokaal niets opgeslagen; Gemini API logt zelf wel volgens Google's privacybeleid (relevant voor DPIA-check FG Katrijn).
+Chatcontent gaat naar Azure AI Foundry volgens Microsoft's dataverwerking. Bij Temporary Chat wordt lokaal niets opgeslagen (relevant voor DPIA-check FG Katrijn).

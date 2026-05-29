@@ -4,17 +4,17 @@ tags:
   - odion
   - odionchat
   - demo
-description: "OdionChat demo-omgeving met Open WebUI en Google Gemini API die Odion-medewerkers laat ervaren hoe een veilige chatomgeving werkt."
+description: "OdionChat chatomgeving met Open WebUI en Azure AI Foundry die Odion-medewerkers laat chatten in een veilige omgeving."
 ---
 
-# OdionChat — Demo
+# OdionChat
 
-Een veilige chatomgeving voor medewerkers van Odion, gebouwd op Open WebUI met Google Gemini als taalmodel.
+Een veilige chatomgeving voor medewerkers van Odion, gebouwd op Open WebUI met Azure AI Foundry als taalmodel.
 
 ## Wat heb je nodig?
 
 - Docker (Docker Desktop of OrbStack)
-- Een Google Gemini API key (verkrijg via [Google AI Studio](https://aistudio.google.com/apikey))
+- Azure AI Foundry API key en endpoint (Azure Portal → Keys and Endpoint)
 
 ## Starten
 
@@ -22,7 +22,7 @@ Een veilige chatomgeving voor medewerkers van Odion, gebouwd op Open WebUI met G
 
 ```bash
 cp .env.example .env
-# Open .env en vul GOOGLE_API_KEY in
+# Open .env en vul OPENAI_API_BASE_URLS + AZURE_OPENAI_API_KEY in
 ```
 
 2. Start OdionChat:
@@ -37,7 +37,7 @@ cp .env.example .env
 Bij de eerste start:
 - Maak een admin-account aan (eerste registratie wordt automatisch admin)
 - Run `./scripts/patch-locale.sh` om modellen, system prompt en suggesties te configureren
-- Twee modellen verschijnen: "OdionChat Snel" (gemini-2.5-flash) en "OdionChat Nadenken" (gemini-2.5-pro)
+- Twee modellen verschijnen: "OdionChat Snel" (`odionchat-fast`) en "OdionChat Nadenken" (`odionchat-pro`)
 
 ## Stoppen
 
@@ -50,8 +50,8 @@ Bij de eerste start:
 
 ```
 odionchat/
-  .env                      # GOOGLE_API_KEY (gitignored)
-  docker-compose.yml        # Open WebUI container, Gemini via OpenAI-compatible endpoint
+  .env                      # OPENAI_API_BASE_URLS, AZURE_OPENAI_API_KEY (gitignored)
+  docker-compose.yml        # Open WebUI container, Foundry via OpenAI-compatible endpoint
   config/
     custom.css              # Odion branding (paars #762283, Montserrat)
     system-prompt.txt       # System prompt (Kompas, B1, weigert persoonsgegevens)
@@ -84,6 +84,7 @@ Doel: `root@<vps-ip>:/opt/odionchat` → `https://odion.manava.nl` (Caddy revers
 
 ## Documentatie
 
+- `docs/deployment-azure.md` — Azure Container Apps deployment
 - `docs/deployment.md` — VPS deployment handleiding
 - `docs/sso-microsoft.md` — Microsoft Entra ID SSO configuratie
 - `docs/architectuur.md` — Technische architectuur en keuzes
@@ -97,5 +98,5 @@ Doel: `root@<vps-ip>:/opt/odionchat` → `https://odion.manava.nl` (Caddy revers
 | "Docker is niet gestart" | Open Docker Desktop / OrbStack en wacht tot het draait |
 | Browser toont niets na 30s | Eerste boot duurt 3-5 min (embeddings download). `docker logs odionchat -f` |
 | Modellen niet zichtbaar | Run `./scripts/patch-locale.sh` na container boot |
-| API key invalid | Controleer `GOOGLE_API_KEY` in `.env` |
+| API key invalid | Controleer `AZURE_OPENAI_API_KEY` en `OPENAI_API_BASE_URLS` in `.env` |
 | CSS/locale werkt niet | Container herstart? `entrypoint.sh` patcht beide bij boot |

@@ -17,7 +17,7 @@ Handleiding voor het deployen van OdionChat op een Linux VPS met Docker en Caddy
 - Linux VPS (Debian/Ubuntu) met root-toegang
 - Minimaal 2 GB RAM, 10 GB opslag
 - Domeinnaam met DNS A-record naar het VPS IP-adres
-- Google Gemini API key
+- Azure AI Foundry API key en endpoint
 
 ## Stap 1: Docker installeren
 
@@ -52,7 +52,8 @@ rsync -avz --exclude='.git' --exclude='.DS_Store' --exclude='data/cache' \
 ```bash
 ssh root@<vps-ip>
 cat > /opt/odionchat/.env << 'EOF'
-GOOGLE_API_KEY=<jouw-gemini-key>
+OPENAI_API_BASE_URLS=https://<resource-name>.openai.azure.com/openai/v1/
+AZURE_OPENAI_API_KEY=<jouw-foundry-key>
 WEBUI_AUTH=true
 PORT=3000
 EOF
@@ -125,7 +126,7 @@ Dit synct bestanden en herstart de container. De `.env` op de VPS wordt niet ove
 | HTTPS werkt niet | `systemctl status caddy` | Check DNS A-record en Caddyfile |
 | 502 Bad Gateway | `docker ps` | Container draait niet, `docker compose up -d` |
 | Locale/CSS niet geladen | `docker logs odionchat \| head -20` | Check of entrypoint.sh correct is gemount |
-| API key werkt niet | Chat testen in browser | Controleer GOOGLE_API_KEY in .env |
+| API key werkt niet | Chat testen in browser | Controleer `AZURE_OPENAI_API_KEY` en `OPENAI_API_BASE_URLS` in .env |
 
 ## Logs bekijken
 

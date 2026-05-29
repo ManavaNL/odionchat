@@ -345,5 +345,10 @@ else
   echo "[entrypoint] Locale patched successfully"
 fi
 
+if [ "${ODION_PATCH_ONLY:-}" = "1" ]; then
+  echo "[entrypoint] Patch-only mode — skipping server start"
+  exit 0
+fi
+
 echo "[entrypoint] Starting Open WebUI..."
 exec bash /app/backend/start.sh

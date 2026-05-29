@@ -41,7 +41,7 @@ Belangrijke env vars in onze setup (zie `docker-compose.yml`):
 | `WEBUI_ADMIN_EMAIL` / `WEBUI_ADMIN_PASSWORD` | Bootstrap admin op lege users-tabel |
 | `WEBUI_AUTH` | `true` — login vereist |
 | `ENABLE_SIGNUP` | `false` — gebruikers worden door admin aangemaakt |
-| `OPENAI_API_BASE_URLS` | Gemini via OpenAI-compatible endpoint |
+| `OPENAI_API_BASE_URLS` | Azure AI Foundry via OpenAI-compatible endpoint |
 | `WEBUI_SESSION_COOKIE_SAME_SITE` | `lax` — voor `http://localhost` |
 | `WEBUI_SESSION_COOKIE_SECURE` | `false` lokaal, `true` op prod |
 
