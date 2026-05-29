@@ -1,0 +1,56 @@
+services:
+  open-webui:
+    # Pinned digest om locale-patches stabiel te houden (rolling :main breekt sed-patterns)
+    image: ghcr.io/open-webui/open-webui@sha256:60fa63e738e7dc5e548f26a54d6deac684d6712256a7fae91dd6157ce64bef84
+    container_name: odionchat
+    ports:
+      - "${PORT:-3000}:8080"
+    volumes:
+      - ./data:/app/backend/data
+      - ./config:/config:ro
+      - ./scripts/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["bash", "/entrypoint.sh"]
+    environment:
+      - PORT=8080
+      - WEBUI_AUTH=${WEBUI_AUTH:-true}
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
+      - DEFAULT_USER_ROLE=user
+      - WEBUI_NAME=OdionChat
+      # Auth determinisme: gepinde secret key houdt JWT-cookies geldig over container-recreates;
+      # admin email/password seedt admin op lege DB (no-op als users-tabel niet leeg is)
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - WEBUI_ADMIN_EMAIL=${WEBUI_ADMIN_EMAIL}
+      - WEBUI_ADMIN_PASSWORD=${WEBUI_ADMIN_PASSWORD}
+      - WEBUI_SESSION_COOKIE_SAME_SITE=lax
+      - WEBUI_SESSION_COOKIE_SECURE=false
+      - ENABLE_VERSION_UPDATE_CHECK=false
+      - ENABLE_OPENAI_API=true
+      - OPENAI_API_BASE_URLS=https://generativelanguage.googleapis.com/v1beta/openai
+      - OPENAI_API_KEYS=${GOOGLE_API_KEY}
+      # Advanced functies uit voor zorgmedewerkers — minder cognitive load,
+      # minder data-egress paths, minder surface area
+      - ENABLE_CODE_INTERPRETER=false
+      - ENABLE_IMAGE_GENERATION=false
+      - ENABLE_RAG_WEB_SEARCH=false
+      - ENABLE_RAG_LOCAL_WEB_FETCH=false
+      - ENABLE_RAG_HYBRID_SEARCH=false
+      - ENABLE_COMMUNITY_SHARING=false
+      - ENABLE_MESSAGE_RATING=false
+      - ENABLE_EVALUATION_ARENA_MODELS=false
+      - ENABLE_CHANNELS=false
+      - ENABLE_OAUTH_SIGNUP=false
+      - ENABLE_API_KEY=false
+      - ENABLE_DIRECT_CONNECTIONS=false
+      - ENABLE_FORWARD_USER_INFO_HEADERS=false
+      - ENABLE_ADMIN_CHAT_ACCESS=false
+      - AUDIO_STT_ENGINE=
+      - AUDIO_TTS_ENGINE=
+      - ENABLE_OLLAMA_API=false
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
