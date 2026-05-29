@@ -1,32 +1,34 @@
 services:
-  open-webui:
-    # Pinned digest om locale-patches stabiel te houden (rolling :main breekt sed-patterns)
-    image: ghcr.io/open-webui/open-webui@sha256:60fa63e738e7dc5e548f26a54d6deac684d6712256a7fae91dd6157ce64bef84
+  odionchat:
+    build: .
     container_name: odionchat
     ports:
       - "${PORT:-3000}:8080"
     volumes:
       - ./data:/app/backend/data
-      - ./config:/config:ro
-      - ./scripts/entrypoint.sh:/entrypoint.sh:ro
-    entrypoint: ["bash", "/entrypoint.sh"]
     environment:
+      # System config
       - PORT=8080
-      - WEBUI_AUTH=${WEBUI_AUTH:-true}
-      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
-      - DEFAULT_USER_ROLE=user
       - WEBUI_NAME=OdionChat
-      # Auth determinisme: gepinde secret key houdt JWT-cookies geldig over container-recreates;
-      # admin email/password seedt admin op lege DB (no-op als users-tabel niet leeg is)
+      - ENABLE_VERSION_UPDATE_CHECK=false
+      
+      # Auth
+      - DEFAULT_USER_ROLE=user
+      - WEBUI_AUTH=${WEBUI_AUTH:-true}
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
       - WEBUI_ADMIN_EMAIL=${WEBUI_ADMIN_EMAIL}
-      - WEBUI_ADMIN_PASSWORD=${WEBUI_ADMIN_PASSWORD}
+      - WEBUI_ADMIN_PASSWORD=${WEBUI_ADMIN_PASSWORD}# 
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
+
+      # Session cookie config
       - WEBUI_SESSION_COOKIE_SAME_SITE=lax
       - WEBUI_SESSION_COOKIE_SECURE=false
-      - ENABLE_VERSION_UPDATE_CHECK=false
+
+      # Model / LLM backend
       - ENABLE_OPENAI_API=true
-      - OPENAI_API_BASE_URLS=https://generativelanguage.googleapis.com/v1beta/openai
-      - OPENAI_API_KEYS=${GOOGLE_API_KEY}
+      - OPENAI_API_BASE_URLS=<open_ai_base_url>
+      - OPENAI_API_KEYS=<open_ai_key>
+      
       # Advanced functies uit voor zorgmedewerkers — minder cognitive load,
       # minder data-egress paths, minder surface area
       - ENABLE_CODE_INTERPRETER=false
@@ -46,9 +48,12 @@ services:
       - AUDIO_STT_ENGINE=
       - AUDIO_TTS_ENGINE=
       - ENABLE_OLLAMA_API=false
+      
     env_file:
       - .env
+    
     restart: unless-stopped
+    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
