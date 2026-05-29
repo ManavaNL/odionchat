@@ -53,8 +53,8 @@ ADMIN_PASSWORD="${WEBUI_ADMIN_PASSWORD:-changeme}"
 
 # echo "=== Creating + updating models ==="
 
-SYSTEM_PROMPT=$(python3 -c "import json; print(json.dumps(open('${PROJECT_DIR}/config/system-prompt.txt').read()))")
-SUGGESTIONS='[{"title":["Dagrapportage","schrijven"],"content":"Help me een dagrapportage schrijven over mijn dienst van vandaag."},{"title":["Eigen regie","ondersteunen"],"content":"Hoe kan ik de eigen regie van mijn cliënt beter ondersteunen?"},{"title":["Uitnodiging","familieavond"],"content":"Schrijf een uitnodiging voor een familieavond bij onze woonlocatie."}]'
+# SYSTEM_PROMPT=$(python3 -c "import json; print(json.dumps(open('${PROJECT_DIR}/config/system-prompt.txt').read()))")
+# SUGGESTIONS='[{"title":["Dagrapportage","schrijven"],"content":"Help me een dagrapportage schrijven over mijn dienst van vandaag."},{"title":["Eigen regie","ondersteunen"],"content":"Hoe kan ik de eigen regie van mijn cliënt beter ondersteunen?"},{"title":["Uitnodiging","familieavond"],"content":"Schrijf een uitnodiging voor een familieavond bij onze woonlocatie."}]'
 
 # Logo als data-URL voor model profile_image_url — anders laat Open WebUI's API-fallback
 # een gradient avatar zien met inconsistente content-type headers (broken icon in browser)
