@@ -2,11 +2,11 @@ name: Publish Docker image
 
 on:
   push:
-    branches: [main]
+    branches: [main, azure-deployment-refactor]
     paths:
       - azure/**
       - config/**
-      - scripts/entrypoint.sh
+      - scripts/patch.sh
       - .github/workflows/docker-publish.yml
   workflow_dispatch:
 
@@ -41,7 +41,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: azure/Dockerfile
+          file: Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

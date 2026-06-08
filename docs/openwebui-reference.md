@@ -75,7 +75,7 @@ Source (v0.8.7):
 - Chats router: https://github.com/open-webui/open-webui/blob/v0.8.7/backend/open_webui/routers/chats.py
 - Volledige routers tree (28 files): https://github.com/open-webui/open-webui/tree/v0.8.7/backend/open_webui/routers
 
-Onze API-calls voor model creation staan in `scripts/patch-locale.sh`. Bij upgrade: check of `POST /api/v1/models/create` en `POST /api/v1/models/model/update?id=...` nog bestaan in de nieuwe `models.py` router.
+Onze API-calls voor model creation staan (WIP) in `scripts/patch.sh`. Bij upgrade: check of `POST /api/v1/models/create` en `POST /api/v1/models/model/update?id=...` nog bestaan in de nieuwe `models.py` router.
 
 ## 6. Database en storage
 
@@ -100,7 +100,7 @@ Source (v0.8.7):
 
 Native customization is beperkt: er is een `backend/open_webui/static/custom.css` die je kunt overschrijven (mount via volume), plus favicon/logo/splash images in dezelfde folder. `WEBUI_STATIC_DIR` env var verzet de hele static folder.
 
-Voor diepgaandere theming biedt Enterprise officiële customization. In OSS is de gebruikelijke workflow: bind-mount eigen `static/` folder + `custom.css` over de defaults heen, of patch via `entrypoint.sh` (onze aanpak — zie `scripts/entrypoint.sh`).
+Voor diepgaandere theming biedt Enterprise officiële customization. In OSS is de gebruikelijke workflow: bind-mount eigen `static/` folder + `custom.css` over de defaults heen, of patch via `scripts/patch.sh` tijdens `docker build` (onze aanpak).
 
 Docs:
 - Customization (Enterprise): https://docs.openwebui.com/enterprise/customization/

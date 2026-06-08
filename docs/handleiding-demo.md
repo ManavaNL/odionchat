@@ -12,9 +12,9 @@ description: "Stap-voor-stap demoscript voor de OdionChat-presentatie aan Odion 
 ## Voorbereiding (voor de demo)
 
 1. Start Docker Desktop
-2. Run `./scripts/start.sh`
+2. Run `docker compose build && docker compose up`
 3. Open [http://localhost:3000](http://localhost:3000) en controleer dat alles werkt
-4. Zet een testgesprek op om te checken dat Claude reageert
+4. Zet een testgesprek op om te checken dat de LLM reageert
 5. Wis het testgesprek
 
 ## Demo-flow
