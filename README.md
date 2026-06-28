@@ -113,6 +113,8 @@ Voor Azure Container Apps met Microsoft Entra ID: zie `docs/deployment-azure.md`
 | Omgeving | Handleiding |
 |----------|-------------|
 | Azure Container Apps | `docs/deployment-azure.md` |
+| Environment variables | `docs/env-vars.md` |
+| Azure persistente storage | `docs/deployment-azure-storage.md` |
 | VPS (legacy) | `docs/deployment-old.md` |
 
 Productie-image: `ghcr.io/manavanl/odionchat:latest` (target port **8080** in Container Apps).
@@ -120,6 +122,8 @@ Productie-image: `ghcr.io/manavanl/odionchat:latest` (target port **8080** in Co
 ## Documentatie
 
 - `docs/deployment-azure.md` — Azure Container Apps deployment
+- `docs/env-vars.md` — `az containerapp update` met alle env vars
+- `docs/deployment-azure-storage.md` — Azure Files mount (SQLite/uploads persistent)
 - `docs/deployment-old.md` — VPS deployment (legacy)
 - `docs/sso-microsoft.md` — Microsoft Entra ID SSO configuratie
 - `docs/architectuur.md` — Technische architectuur en keuzes

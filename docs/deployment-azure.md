@@ -16,6 +16,8 @@ Handleiding voor het deployen van OdionChat op Azure met:
 
 Zie ook:
 
+- `docs/env-vars.md` — **`az containerapp update`** met alle env vars
+- `docs/deployment-azure-storage.md` — persistente data (Azure Files)
 - `docs/deployment-old.md` — VPS-deployment (legacy)
 - `docs/architectuur.md` — architectuurkeuzes
 
@@ -29,9 +31,10 @@ Zie ook:
 | 4 | Azure AI Foundry resource + model deployments | [Fase 2](#fase-2--azure-ai-foundry-endpoint) |
 | 5 | Azure infrastructuur (RG, logs, Container Apps) | [Fase 3](#fase-3--container-app-deployen) |
 | 6 | Container image deployen | [Fase 3.2](#32-container-image-deployen) |
-| 7 | Omgevingsvariabelen (Foundry + Entra + auth) | [Fase 4](#fase-4--omgevingsvariabelen-configureren) |
+| 7 | Omgevingsvariabelen | [env-vars.md](env-vars.md) |
 | 8 | Custom domain + TLS | [Fase 3.4](#34-custom-domain--tls) |
-| 9 | Testen en go-live | [Fase 6](#fase-6--hardening--go-live) |
+| 9 | Persistente storage (Azure Files) | [deployment-azure-storage.md](deployment-azure-storage.md) |
+| 10 | Testen en go-live | [Fase 6](#fase-6--hardening--go-live) |
 
 **Productie-image:** `ghcr.io/manavanl/odionchat:latest` (poort **8080**).
 
@@ -347,20 +350,13 @@ export IMAGE=ghcr.io/manavanl/odionchat:local
 
 ### 3.3 Container App aanmaken
 
-Maak eerst een willekeurig `WEBUI_SECRET_KEY` (64+ tekens) en sla op in Key Vault:
+Genereer een `WEBUI_SECRET_KEY` en maak de Container App aan. Configureer daarna alle env vars via **[env-vars.md](env-vars.md)**.
+
+Minimale aanmaak (alleen health check; configureer daarna env vars):
 
 ```bash
 export WEBUI_SECRET_KEY=$(openssl rand -hex 32)
 
-az keyvault secret set \
-  --vault-name "$KEY_VAULT" \
-  --name WEBUI-SECRET-KEY \
-  --value "$WEBUI_SECRET_KEY"
-```
-
-Maak de Container App aan (env vars worden in Fase 4 uitgebreid):
-
-```bash
 az containerapp create \
   --name "$CONTAINER_APP" \
   --resource-group "$RESOURCE_GROUP" \
@@ -369,7 +365,7 @@ az containerapp create \
   --target-port 8080 \
   --ingress external \
   --min-replicas 1 \
-  --max-replicas 2 \
+  --max-replicas 1 \
   --cpu 1.0 \
   --memory 2.0Gi \
   --env-vars \
@@ -378,6 +374,8 @@ az containerapp create \
     WEBUI_AUTH=true \
     ENABLE_SIGNUP=false
 ```
+
+Configureer env vars: [env-vars.md](env-vars.md).
 
 Noteer de FQDN:
 
@@ -452,74 +450,11 @@ curl -sf "https://$CUSTOM_DOMAIN/health"
 
 ## Fase 4 — Omgevingsvariabelen configureren
 
-Configureer alle instellingen als environment variables op de Container App. Gebruik **Container App secrets** voor gevoelige waarden (client secret, API key, `WEBUI_SECRET_KEY`).
-
-### 4.1 Secrets registreren op de Container App
-
-Vervang de placeholders door de waarden uit Fase 1 en 2:
-
-```bash
-export MICROSOFT_CLIENT_ID="<application-client-id>"
-export MICROSOFT_CLIENT_TENANT_ID="<directory-tenant-id>"
-
-az containerapp secret set \
-  --name "$CONTAINER_APP" \
-  --resource-group "$RESOURCE_GROUP" \
-  --secrets \
-    microsoft-client-secret="<client-secret-value>" \
-    openai-api-key="$FOUNDRY_API_KEY" \
-    webui-secret-key="$WEBUI_SECRET_KEY"
-```
-
-### 4.2 Alle variabelen in één keer zetten
-
-```bash
-az containerapp update \
-  --name "$CONTAINER_APP" \
-  --resource-group "$RESOURCE_GROUP" \
-  --set-env-vars \
-    PORT=8080 \
-    WEBUI_NAME=OdionChat \
-    WEBUI_URL="$WEBUI_URL" \
-    WEBUI_AUTH=true \
-    ENABLE_SIGNUP=false \
-    ENABLE_OAUTH_SIGNUP=true \
-    ENABLE_LOGIN_FORM=false \
-    ENABLE_OAUTH_PERSISTENT_CONFIG=false \
-    WEBUI_SESSION_COOKIE_SAME_SITE=lax \
-    WEBUI_SESSION_COOKIE_SECURE=true \
-    MICROSOFT_CLIENT_ID="$MICROSOFT_CLIENT_ID" \
-    MICROSOFT_CLIENT_TENANT_ID="$MICROSOFT_CLIENT_TENANT_ID" \
-    MICROSOFT_CLIENT_SECRET=secretref:microsoft-client-secret \
-    MICROSOFT_OAUTH_SCOPE="openid email profile offline_access" \
-    MICROSOFT_REDIRECT_URI="$WEBUI_URL/oauth/microsoft/callback" \
-    OPENID_PROVIDER_URL="https://login.microsoftonline.com/$MICROSOFT_CLIENT_TENANT_ID/v2.0/.well-known/openid-configuration" \
-    OPENAI_API_BASE_URLS="$FOUNDRY_ENDPOINT" \
-    OPENAI_API_KEYS=secretref:openai-api-key \
-    WEBUI_SECRET_KEY=secretref:webui-secret-key \
-    AZURE_DEPLOYMENT_FAST=odionchat-fast \
-    AZURE_DEPLOYMENT_PRO=odionchat-pro \
-    ENABLE_OPENAI_API=true \
-    ENABLE_CODE_INTERPRETER=false \
-    ENABLE_IMAGE_GENERATION=false \
-    ENABLE_RAG_WEB_SEARCH=false \
-    ENABLE_RAG_LOCAL_WEB_FETCH=false \
-    ENABLE_RAG_HYBRID_SEARCH=false \
-    ENABLE_COMMUNITY_SHARING=false \
-    ENABLE_MESSAGE_RATING=false \
-    ENABLE_EVALUATION_ARENA_MODELS=false \
-    ENABLE_CHANNELS=false \
-    ENABLE_API_KEY=false \
-    ENABLE_DIRECT_CONNECTIONS=false \
-    ENABLE_FORWARD_USER_INFO_HEADERS=false \
-    ENABLE_ADMIN_CHAT_ACCESS=false \
-    ENABLE_OLLAMA_API=false \
-    ENABLE_VERSION_UPDATE_CHECK=false
-```
+Run het script uit **[env-vars.md](env-vars.md)** (`az containerapp secret set` + `az containerapp update`).
 
 **Portal-alternatief:** Container App → **Containers** → **Edit and deploy** → tab **Environment variables**. Voeg secrets toe onder **Secrets**, koppel ze met `secretref:<naam>`.
 
-### 4.3 Wat elke groep doet
+### 4.1 Wat elke groep doet
 
 #### Authenticatie (alleen ingelogde gebruikers)
 
@@ -568,22 +503,9 @@ De deployment names (`AZURE_DEPLOYMENT_*`) moeten overeenkomen met de namen in F
 
 #### Feature lockdown
 
-Deze instellingen staan ook in `.env.example` en moeten op Azure actief blijven — zie het volledige `--set-env-vars` blok in [4.2](#42-alle-variabelen-in-én-keer-zetten).
+Deze instellingen staan ook in `.env.example` en staan in [env-vars.md](env-vars.md).
 
-### 4.4 Secrets veilig injecteren (Key Vault)
-
-Voor langere termijn en secret rotation, bewaar in Key Vault:
-
-| Secret | Gebruik |
-|--------|---------|
-| `MICROSOFT-CLIENT-SECRET` | Entra SSO |
-| `OPENAI-API-KEY` | Azure AI Foundry |
-| `WEBUI-SECRET-KEY` | JWT signing / sessies |
-| `DATABASE-URL` | PostgreSQL (optioneel) |
-
-Key Vault-referenties op Container Apps vereisen een managed identity + RBAC (`Key Vault Secrets User`). Alternatief: gebruik Container App secrets direct (zoals in 4.1) — eenvoudiger voor de eerste deploy.
-
-### 4.5 Container App herstarten na wijzigingen
+### 4.2 Container App herstarten na wijzigingen
 
 ```bash
 az containerapp update \
